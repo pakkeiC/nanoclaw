@@ -17,6 +17,7 @@ import {
   TIMEZONE,
 } from './config.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
+import { readEnvFile } from './env.js';
 import { logger } from './logger.js';
 import {
   CONTAINER_HOST_GATEWAY,
@@ -236,6 +237,15 @@ function buildContainerArgs(
     args.push('-e', 'ANTHROPIC_API_KEY=placeholder');
   } else {
     args.push('-e', 'CLAUDE_CODE_OAUTH_TOKEN=placeholder');
+  }
+
+  // Medium member cookies for RSS paywall bypass (opt-in, only injected when set)
+  const mediumSecrets = readEnvFile(['MEDIUM_SID', 'MEDIUM_UID']);
+  if (mediumSecrets.MEDIUM_SID) {
+    args.push('-e', `MEDIUM_SID=${mediumSecrets.MEDIUM_SID}`);
+  }
+  if (mediumSecrets.MEDIUM_UID) {
+    args.push('-e', `MEDIUM_UID=${mediumSecrets.MEDIUM_UID}`);
   }
 
   // Runtime-specific args for host gateway resolution
