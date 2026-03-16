@@ -224,7 +224,21 @@ Send the digest using `mcp__nanoclaw__send_message`.
 
 ---
 
-## Phase 5: Build and Restart
+## Phase 5: Ad-hoc Run Support
+
+The skill also enables on-demand digests triggered by natural language messages. This is handled by the agent instruction file (`groups/global/CLAUDE.md` or `groups/{folder}/CLAUDE.md`), which is already updated when you install this skill.
+
+Supported trigger patterns:
+- **Full digest**: "summarize the feed", "run RSS digest now", "what's new", "fetch my feeds"
+- **Single feed**: "summarize the Hacker News feed", "what's new on ByteByteGo", "show me the quant feed"
+
+For single-feed requests, the agent matches the user's words against feed labels (case-insensitive, partial match) and fetches only that feed.
+
+No additional setup needed — the instructions are already in `groups/global/CLAUDE.md`.
+
+---
+
+## Phase 7: Build and Restart
 
 ```bash
 npm run build
