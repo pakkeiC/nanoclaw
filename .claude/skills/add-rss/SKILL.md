@@ -105,8 +105,7 @@ Write `groups/{folder}/rss-config.json` with the collected values:
   "topics": ["AI/ML", "distributed systems", "TypeScript"],
   "topN": 5,
   "schedule": "0 9 * * *",
-  "mediumEnabled": true,
-  "seenGuids": []
+  "mediumEnabled": true
 }
 ```
 
@@ -116,7 +115,6 @@ Fields:
 - `topN`: number of articles per digest
 - `schedule`: cron expression
 - `mediumEnabled`: whether to pass Medium cookies when fetching medium.com URLs
-- `seenGuids`: managed automatically by the agent — do not edit manually
 
 ---
 
@@ -143,7 +141,6 @@ Read `/workspace/group/rss-config.json`. It contains:
 - `topics`: list of topics the user cares about (use for relevance scoring)
 - `topN`: max articles to include in the digest
 - `mediumEnabled`: whether to use Medium session cookies
-- `seenGuids`: array of article GUIDs already sent (skip these)
 
 ## Step 1 — Fetch Feeds
 
@@ -182,13 +179,9 @@ fetch(url, { headers })
 
 Collect all fetched articles. Note which feed label each came from. If a feed returns `FEED_ERROR:`, record it as failed but continue.
 
-## Step 2 — Filter Seen Articles
+## Step 2 — Score and Rank
 
-Remove any article whose `guid` is in `seenGuids`. Only new articles proceed.
-
-## Step 3 — Score and Rank
-
-For each new article, assign a relevance score (1–10) based on:
+For each fetched article, assign a relevance score (1–10) based on:
 
 1. **Topic match** (most important): Does the title/summary directly relate to any topic in `topics`? Strong match = +4, partial = +2, none = 0
 2. **Content quality signals**: Is it a tutorial, deep-dive, case study, or original research? = +3. Is it an opinion piece, list post, or news brief? = +1
@@ -219,18 +212,14 @@ Topics: {comma-separated topics list}
 
 Keep the total under 4000 characters. If over, shorten summaries to 1 sentence each.
 
-If zero new articles: send "📰 No new articles since last digest."
+If no articles scored above 0: send "📰 No relevant articles in this digest."
 
 For Telegram: use *bold* (single asterisks), avoid markdown headings.
 For WhatsApp: use plain text, no markdown.
 
-## Step 5 — Send and Persist
+## Step 5 — Send
 
-1. Send the digest using `mcp__nanoclaw__send_message`.
-2. Re-read `/workspace/group/rss-config.json` (in case it was modified).
-3. Append all processed article GUIDs (sent + skipped) to `seenGuids`. This prevents re-evaluation on the next run.
-4. Cap `seenGuids` at 500 entries — remove the oldest when over the limit.
-5. Write the updated config back to `/workspace/group/rss-config.json`.
+Send the digest using `mcp__nanoclaw__send_message`.
 ```
 
 ---
@@ -293,4 +282,3 @@ To update Medium cookies when they expire:
 
 - `MEDIUM_SID`/`MEDIUM_UID` are read from `.env` on the host, injected as container env vars — the container cannot access `.env` directly (it is shadowed by `/dev/null` in the project mount)
 - Feed URLs are user-configured; the agent fetches them with a standard User-Agent header
-- `seenGuids` is stored in the group folder (writable by the container) — this is intentional, it is ephemeral per-group state
