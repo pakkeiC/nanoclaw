@@ -47,6 +47,94 @@ When you learn something important:
 - Split files larger than 500 lines into folders
 - Keep an index in your memory for the files you create
 
+## RSS Feed Management
+
+Users can manage RSS feed subscriptions and the daily digest with these commands:
+
+- `rss add <url> [label]` — Subscribe to a feed
+- `rss remove <url|label>` — Unsubscribe from a feed
+- `rss list` — List all subscribed feeds with labels
+- `rss fetch` — Deliver an immediate digest right now
+- `rss schedule <time>` — Change digest delivery time (e.g. `rss schedule 07:30`)
+- `rss pause` / `rss resume` — Pause or resume the daily digest
+- `rss medium setup` — Upload Medium cookies for paywalled article access
+- `rss medium status` — Show Medium cookie expiry date
+- `rss medium clear` — Delete Medium cookies and revert to preview-only
+
+### Feed storage
+
+Feed configuration is stored at `/workspace/group/rss_feeds.json`. Read and write this file directly for all subscription changes. Never mutate the existing object in place — always read the full file, create a new object with your changes, and write the new object back.
+
+Schema:
+```json
+{
+  "version": 1,
+  "feeds": [
+    { "url": "https://example.com/feed.rss", "label": "Example Blog", "added_at": "2026-03-17T08:00:00Z" }
+  ],
+  "digest": {
+    "schedule": "0 8 * * *",
+    "max_items_per_feed": 10,
+    "task_id": "rss-digest-xxxx"
+  },
+  "medium": {
+    "cookies_file": "medium_cookies.txt",
+    "saved_at": "2026-03-17T08:00:00Z",
+    "expires_at": "2026-04-16T08:00:00Z",
+    "warned": false
+  },
+  "seen_guids": []
+}
+```
+
+`seen_guids` tracks article GUIDs/links already delivered. Trim to the last 500 entries after each digest run.
+
+### rss add
+
+1. Validate the URL — fetch with `WebFetch` and confirm it returns RSS or Atom XML. If not, report an error and stop.
+2. Read `/workspace/group/rss_feeds.json` (create with defaults if absent).
+3. Check for duplicates — if the URL already exists, inform the user and stop.
+4. Write the updated config with the new feed appended.
+5. If no active digest task exists (`digest.task_id` empty or not in `/workspace/tasks.json`), create one via IPC with `schedule_type: "cron"` and the current `digest.schedule`. Store the returned task ID in `digest.task_id`.
+6. Confirm subscription.
+
+### rss remove
+
+1. Read `rss_feeds.json`. Find the feed by URL or label (case-insensitive).
+2. Write the updated config with that feed removed.
+3. If no feeds remain, cancel the scheduled task via IPC (`cancel_task` with `digest.task_id`) and clear `digest.task_id`.
+4. Confirm removal.
+
+### rss medium setup
+
+Prompt the user:
+> Please export your Medium cookies using the *"Get cookies.txt LOCALLY"* browser extension (Chrome/Firefox). Export cookies for `medium.com`, then send me the file or paste the content.
+
+When the user sends the content:
+1. Validate it contains at least one `medium.com` cookie line.
+2. Write to `/workspace/group/medium_cookies.txt`.
+3. Parse the highest expiry timestamp from the cookie file.
+4. Update `rss_feeds.json` `medium` block with `saved_at`, `expires_at`, `warned: false`.
+5. Confirm: ✓ Medium cookies saved. Active until `<date>`.
+
+### rss medium clear
+
+Delete `/workspace/group/medium_cookies.txt` if it exists. Set `medium` to `null` in `rss_feeds.json`. Confirm.
+
+### Daily digest logic (runs as a scheduled task)
+
+1. Read `rss_feeds.json`. If no feeds, send "No RSS feeds configured." and stop.
+2. Check Medium cookies: if `medium.cookies_file` exists and today < `expires_at`, Medium cookie fetch is active. If expired and `warned` is false, note expiry in digest footer and set `warned: true`.
+3. For each feed, fetch the RSS/Atom URL via `WebFetch`. Parse items (title, link, description, pubDate, guid). Filter out guids already in `seen_guids`. Keep at most `max_items_per_feed` new items.
+4. For Medium articles with valid cookies, fetch full content:
+   ```bash
+   curl -s -b /workspace/group/medium_cookies.txt "<article_url>" -o /tmp/medium_article.html
+   ```
+   Extract article body text. Fall back to RSS description if curl fails.
+5. Summarise each item in 1–2 sentences. Group by feed. If no new items, send "No new articles today." and stop.
+6. Deliver the digest via `mcp__nanoclaw__send_message`.
+7. Append all delivered guids to `seen_guids`, trim to last 500, write updated config.
+
 ## Message Formatting
 
 NEVER use markdown. Only use WhatsApp/Telegram formatting:
